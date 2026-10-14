@@ -170,6 +170,7 @@ input[type=radio],input[type=checkbox]{width:auto;accent-color:var(--brand)}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 <script>
 /* ================= CONFIG ================= */
 const SUPABASE_URL = 'https://hintkgegebsssmamoxdx.supabase.co';
@@ -735,7 +736,7 @@ async function viewDetail(id) {
       <p class="mute">${esc(r.doc_no)} · ${statusBadge(r)}</p></div>
       <div class="actions">
         ${canEdit ? `<a class="btn primary" href="#/edit/${r.id}">✏️ ${r.status === 'rejected' ? 'แก้ไขและส่งใหม่' : 'แก้ไข'}</a>` : ''}
-        ${r.status === 'approved' ? '<button class="btn primary" id="btn-print">🖨 พิมพ์เอกสาร</button>' : ''}
+        ${r.status === 'approved' ? '<button class="btn primary" id="btn-pdf">💾 บันทึกเป็น PDF</button><button class="btn primary" id="btn-print">🖨 พิมพ์เอกสาร</button>' : ''}
         ${canDelete ? '<button class="btn danger" id="btn-del">ลบ</button>' : ''}
       </div></div>
     ${r.status === 'rejected' && lastReject ? `<div class="alert err"><b>ถูก Reject โดย ${ROLE_LABEL[lastReject.step]} (${esc(lastReject.actor_name)}) · ${fmtDT(lastReject.created_at)}</b><br>${nl(lastReject.comment)}</div>` : ''}
@@ -781,6 +782,7 @@ async function viewDetail(id) {
     setTimeout(() => URL.revokeObjectURL(url), 15000);
   }));
   if ($('#btn-print')) $('#btn-print').onclick = () => printDoc(r, cycle);
+  if ($('#btn-pdf')) $('#btn-pdf').onclick = () => guard(() => savePdf(r, cycle));
   if ($('#btn-del')) $('#btn-del').onclick = () => guard(async () => {
     if (!confirm(`ลบคำขอ ${r.doc_no} ? การลบไม่สามารถกู้คืนได้`)) return;
     const {error: e} = await sb.from('promotion_requests').delete().eq('id', r.id);
@@ -802,21 +804,49 @@ async function viewDetail(id) {
 }
 
 /* ================= PRINT ================= */
-function printDoc(r, cycle) {
+function buildDocHtml(r, cycle) {
   const sigs = [`<div class="sig"><div class="role">ผู้ขอ (Requester)</div><div class="nm">${esc(r.created_by_name)}</div><div class="cm">${fmtDT(r.submitted_at)}</div></div>`]
     .concat(flowOf(r).map(s => {
       const a = cycle.find(x => x.step === s && x.action === 'approve');
       return `<div class="sig"><div class="role">${ROLE_LABEL[s]}</div><div class="nm">${a ? esc(a.actor_name) : '&nbsp;'}</div>
         <div class="cm">${a ? 'อนุมัติเมื่อ ' + fmtDT(a.created_at) : ''}${a && a.comment ? '<br>' + nl(a.comment) : ''}</div></div>`;
     })).join('');
-  $('#print-area').innerHTML = `<div class="pd">
+  return `<div class="pd">
     <h1>ใบขออนุมัติส่วนลดโปรโมชัน</h1><div class="sub">Promotion Discount Approval Request</div>
     <table class="meta"><tr><td><b>เลขที่เอกสาร:</b> ${esc(r.doc_no)}</td><td><b>วันที่ขอ:</b> ${fmtDate(r.submitted_at || r.created_at)}</td></tr>
       <tr><td><b>ผู้ขอ:</b> ${esc(r.created_by_name)}</td><td><b>อนุมัติครบเมื่อ:</b> ${fmtDate(r.completed_at)}</td></tr></table>
     <h3>รายละเอียดโปรโมชัน</h3>
     <table>${detailRows(r, true).map(([k, val]) => `<tr><th style="width:28%;text-align:left">${k}</th><td>${val}</td></tr>`).join('')}</table>
-    <h3>การอนุมัติ</h3><div class="sigs">${sigs}</div></div>`;
+    <h3>การอนุมัติ</h3><div class="sigs">${sigs}</div>
+    <div class="sub" style="margin-top:14px;font-size:10px">ออกเอกสารจากระบบเมื่อ ${fmtDT(new Date().toISOString())}</div></div>`;
+}
+
+// พิมพ์ (เปิดหน้าต่างพิมพ์ของเบราว์เซอร์ — เลือก "Save as PDF" ได้ด้วย)
+function printDoc(r, cycle) {
+  $('#print-area').innerHTML = buildDocHtml(r, cycle);
   window.print();
+}
+
+// บันทึกเป็นไฟล์ PDF (A4) ดาวน์โหลดทันที ตั้งชื่อไฟล์ตามเลขที่เอกสาร
+async function savePdf(r, cycle) {
+  if (!window.html2pdf) throw new Error('โหลดไลบรารี PDF ไม่สำเร็จ ลองรีเฟรชหน้า หรือใช้ปุ่มพิมพ์แล้วเลือก Save as PDF');
+  const stage = document.createElement('div');
+  // วางนอกจอ (ไม่ใช้ display:none เพราะจะ render ไม่ได้) กว้างเท่าพื้นที่เนื้อหา A4 (190mm ≈ 718px)
+  stage.style.cssText = 'position:absolute;left:-10000px;top:0;width:718px;background:#fff;';
+  stage.innerHTML = buildDocHtml(r, cycle);
+  document.body.appendChild(stage);
+  try {
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    await html2pdf().set({
+      margin: [10, 10, 10, 10],
+      filename: `${r.doc_no || 'promotion-request'}.pdf`,
+      image: {type: 'jpeg', quality: 0.98},
+      html2canvas: {scale: 2, useCORS: true, backgroundColor: '#ffffff'},
+      jsPDF: {unit: 'mm', format: 'a4', orientation: 'portrait'},
+      pagebreak: {mode: ['css', 'legacy'], avoid: ['.sig', 'tr', 'h3']},
+    }).from(stage.firstElementChild).save();
+    toast('บันทึก PDF แล้ว');
+  } finally { stage.remove(); }
 }
 
 /* ================= EXCEL ================= */
