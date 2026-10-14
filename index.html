@@ -685,6 +685,7 @@ async function viewDetail(id) {
   if (error || !r) throw new Error('ไม่พบคำขอ หรือคุณไม่มีสิทธิ์ดู');
   const hist = ap || [];
 
+  // ประวัติรอบล่าสุด (นับจาก submit/resubmit ครั้งล่าสุด)
   let startIdx = -1;
   hist.forEach((a, i) => { if (a.action === 'submit' || a.action === 'resubmit') startIdx = i; });
   const cycle = startIdx >= 0 ? hist.slice(startIdx) : [];
@@ -705,24 +706,29 @@ async function viewDetail(id) {
   const canEdit = isOwner && ['draft', 'rejected'].includes(r.status);
   const canDelete = me.role === 'admin' || (isOwner && r.status === 'draft');
 
+  // ไฟล์แนบ: ขอ signed URL (อายุ 1 ชม.) เพื่อพรีวิวรูป/PDF ในหน้า
+  // ถ้าขอไม่ได้จะแสดงสาเหตุจริงในการ์ด (เช่น สิทธิ์ Storage ไม่ครบ) แทนข้อความกว้าง ๆ
   const attList = r.attachments || [];
   let attView = [];
   if (attList.length) {
-    const {data: urls} = await sb.storage.from(BUCKET).createSignedUrls(attList.map(a => a.path), 3600);
+    const {data: urls, error: urlErr} = await sb.storage.from(BUCKET).createSignedUrls(attList.map(a => a.path), 3600);
+    if (urlErr) console.warn('createSignedUrls:', urlErr);
     const byPath = Object.fromEntries((urls || []).map(x => [x.path, x]));
     attView = attList.map(a => {
-      const u = byPath[a.path] && !byPath[a.path].error ? byPath[a.path].signedUrl : null;
+      const hit = byPath[a.path];
+      const u = hit && !hit.error ? hit.signedUrl : null;
+      const err = u ? '' : ((hit && hit.error) || (urlErr && urlErr.message) || 'ไม่พบไฟล์ หรือไม่มีสิทธิ์เข้าถึง');
       const isImg = /^image\//.test(a.type || '') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name || '');
       const isPdf = a.type === 'application/pdf' || /\.pdf$/i.test(a.name || '');
-      return {...a, url: u, kind: isImg ? 'img' : isPdf ? 'pdf' : 'file'};
+      return {...a, url: u, err, kind: isImg ? 'img' : isPdf ? 'pdf' : 'file'};
     });
   }
   const attHtml = attView.length ? `<div class="card"><h3>📎 เอกสารแนบ (${attView.length})</h3><div class="att-grid">${attView.map((a, i) => !a.url
-    ? `<div class="att-item"><div class="att-ico">⚠️</div><div class="att-name">${esc(a.name)}<br><small class="mute">เปิดไฟล์ไม่ได้</small></div></div>`
+    ? `<div class="att-item"><div class="att-ico">⚠️</div><div class="att-name">${esc(a.name)}<br><small style="color:var(--danger)">เปิดไฟล์ไม่ได้: ${esc(a.err)}</small></div></div>`
     : `<div class="att-item">${a.kind === 'img' ? `<img src="${esc(a.url)}" data-view="${i}" alt="${esc(a.name)}" loading="lazy">`
         : a.kind === 'pdf' ? `<div class="att-ico" data-view="${i}">📄</div>` : '<div class="att-ico">📎</div>'}
       <div class="att-name">${esc(a.name)}<br><small class="mute">${fmtSize(a.size)}</small></div>
-      <div>${a.kind !== 'file' ? `<button class="btn sm" data-view="${i}">ดู</button> ` : ''}<a class="btn sm" href="${esc(a.url)}" target="_blank" rel="noopener">เปิด / ดาวน์โหลด</a></div></div>`).join('')}</div></div>` : '';
+      <div>${a.kind !== 'file' ? `<button class="btn sm" data-view="${i}">ดู</button> ` : ''}<button class="btn sm" data-dl="${i}">ดาวน์โหลด</button></div></div>`).join('')}</div></div>` : '';
 
   $('#main').innerHTML = `
     <div class="page-head"><div><a href="${DEFAULT[group()]}">← กลับ</a><h2 style="margin-top:6px">${esc(r.title || r.objective)}</h2>
@@ -745,15 +751,35 @@ async function viewDetail(id) {
         <td><span class="badge ${a.action === 'reject' ? 'rejected' : a.action === 'approve' ? 'approved' : 'draft'}">${ACTION_LABEL[a.action]}</span></td>
         <td>${esc(a.actor_name)}</td><td>${nl(a.comment) || '-'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="mute">ยังไม่มีประวัติ</div>'}</div>`;
 
-  $$('[data-view]').forEach(el => el.onclick = () => {
+  // พรีวิว / ดาวน์โหลดไฟล์แนบ
+  // โหลดไฟล์เป็น blob ก่อน เพราะ Storage ส่ง header ที่ทำให้ PDF แสดงใน iframe/แท็บใหม่ตรง ๆ ไม่ได้ในบางเบราว์เซอร์
+  const fetchBlob = async a => {
+    const res = await fetch(a.url);
+    if (!res.ok) throw new Error(`โหลดไฟล์ไม่สำเร็จ (${res.status})`);
+    return res.blob();
+  };
+  $$('[data-view]').forEach(el => el.onclick = () => guard(async () => {
     const a = attView[+el.dataset.view];
+    let src = a.url;
+    if (a.kind === 'pdf') {
+      try { src = URL.createObjectURL(new Blob([await fetchBlob(a)], {type: 'application/pdf'})); }
+      catch (e) { console.warn(e); }
+    }
     const body = a.kind === 'img'
-      ? `<img src="${esc(a.url)}" alt="${esc(a.name)}" style="max-width:100%;display:block;margin:0 auto">`
-      : `<iframe src="${esc(a.url)}" style="width:100%;height:75vh;border:0"></iframe>`;
+      ? `<img src="${esc(src)}" alt="${esc(a.name)}" style="max-width:100%;display:block;margin:0 auto">`
+      : `<iframe src="${esc(src)}" style="width:100%;height:75vh;border:0"></iframe>`;
     openModal(`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
       <b style="word-break:break-all">${esc(a.name)}</b>
-      <span style="white-space:nowrap"><a class="btn sm" href="${esc(a.url)}" target="_blank" rel="noopener">เปิดในแท็บใหม่</a> <button class="btn sm" data-close>ปิด</button></span></div>${body}`, 'wide');
-  });
+      <span style="white-space:nowrap"><a class="btn sm" href="${esc(src)}" target="_blank" rel="noopener">เปิดในแท็บใหม่</a> <button class="btn sm" data-close>ปิด</button></span></div>${body}`, 'wide');
+  }));
+  $$('[data-dl]').forEach(el => el.onclick = () => guard(async () => {
+    const a = attView[+el.dataset.dl];
+    const url = URL.createObjectURL(await fetchBlob(a));
+    const link = document.createElement('a');
+    link.href = url; link.download = a.name || 'file';          // ใช้ชื่อไฟล์เดิมที่ผู้ขอแนบ
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }));
   if ($('#btn-print')) $('#btn-print').onclick = () => printDoc(r, cycle);
   if ($('#btn-del')) $('#btn-del').onclick = () => guard(async () => {
     if (!confirm(`ลบคำขอ ${r.doc_no} ? การลบไม่สามารถกู้คืนได้`)) return;
