@@ -394,7 +394,7 @@ function mountMulti(root, {options, selected, allLabel, onChange}) {
   return {get: () => options.filter(o => sel.has(o))};
 }
 document.addEventListener('click', e => {
-  $$('.ms').forEach(ms => { if (!ms.contains(e.target))$('.ms-panel', ms).hidden = true; });
+  $$('.ms').forEach(ms => { if (!ms.contains(e.target)) $('.ms-panel', ms).hidden = true; });
 });
 
 /* ================= FORM ================= */
@@ -446,13 +446,13 @@ async function viewForm(id) {
     </div></div>
 
     <div class="card"><div class="sect">🎯 ขอบเขตการใช้งาน</div><div class="grid">
-      <div class="field"><label>ขอบเขตส่วนลด</label>${radios('scope', Object.entries(SCOPE_LABEL), r.discount_scope)}</div>
+      <div class="field"><label>ขอบเขตส่วนลด</label>${radios('scope', Object.entries(SCOPE_LABEL), r.discount_scope || 'ITEM')}</div>
       <div class="field"><label>จำกัดรายการรักษา (เลือกได้มากกว่า 1)</label><div id="ms_treat"></div></div>
       <div class="field"><label>จำกัดสาขา (เลือกได้มากกว่า 1)</label><div id="ms_branch"></div></div>
     </div></div>
 
     <div class="card"><div class="sect">🧮 มูลค่าส่วนลด</div><div class="grid">
-      <div class="field"><label>ประเภทส่วนลด</label>${radios('dtype', [['PERCENT', 'เปอร์เซ็นต์ (%)'], ['AMOUNT', 'จำนวนเงิน (บาท)']], r.discount_type)}</div>
+      <div class="field"><label>ประเภทส่วนลด</label>${radios('dtype', [['PERCENT', 'เปอร์เซ็นต์ (%)'], ['AMOUNT', 'จำนวนเงิน (บาท)']], r.discount_type || 'PERCENT')}</div>
       <div class="field"><label>มูลค่าส่วนลด <span class="req">*</span></label><input type="number" min="0" step="any" id="f_val" value="${r.discount_value ?? ''}" placeholder="เช่น 20 หรือ 500"></div>
     </div></div>
 
@@ -553,22 +553,36 @@ async function viewForm(id) {
   });
 
   /* ---- เก็บค่า / ตรวจสอบ / บันทึก ---- */
-  const v = fid => $('#' + fid).value.trim();
-  const rv = name => document.querySelector(`input[name="${name}"]:checked`).value;
+  const v = fid => { const el = $('#' + fid); return el ? el.value.trim() : ''; };
+  const rv = name => { const el = document.querySelector(`input[name="${name}"]:checked`); return el ? el.value : ''; };
+  
   const collect = () => ({
-    requester_email: v('f_email'), requester_name: v('f_name'), title: v('f_title'), approve_until: $('#f_type').value, objective: v('f_obj'),
-    discount_scope: rv('scope'), treatments: msT.get(), branch_list: msB.get(),
-    discount_type: rv('dtype'), discount_value: v('f_val'),
-    promo_code: v('f_code'), start_date: v('f_start'), end_date: v('f_end'),
-    doctor: $('#f_doctype').value === 'specific' ? v('f_doctor') : '', patient_group: v('f_pgroup'), max_uses: v('f_uses'), max_discount_pct: v('f_maxpct'),
+    requester_email: v('f_email'),
+    requester_name: v('f_name'),
+    title: v('f_title'),
+    approve_until: $('#f_type') ? $('#f_type').value : 'excom',
+    objective: v('f_obj'),
+    discount_scope: rv('scope') || 'ITEM',
+    treatments: msT.get(),
+    branch_list: msB.get(),
+    discount_type: rv('dtype') || 'PERCENT',
+    discount_value: v('f_val'),
+    promo_code: v('f_code'),
+    start_date: v('f_start'),
+    end_date: v('f_end'),
+    doctor: ($('#f_doctype') && $('#f_doctype').value === 'specific') ? v('f_doctor') : '',
+    patient_group: v('f_pgroup'),
+    max_uses: v('f_uses'),
+    max_discount_pct: v('f_maxpct'),
     attachments: atts,
   });
+
   const validate = d => {
     if (!/^\S+@\S+\.\S+$/.test(d.requester_email)) throw new Error('กรุณาระบุอีเมล Microsoft 365 ให้ถูกต้อง');
     if (!d.requester_name) throw new Error('กรุณาระบุชื่อ-นามสกุล');
     if (!d.title) throw new Error('กรุณาระบุชื่อโปรโมชั่น');
     if (!d.objective) throw new Error('กรุณาระบุวัตถุประสงค์ในการทำโปรโมชัน');
-    if ($('#f_doctype').value === 'specific' && !d.doctor) throw new Error('กรุณาระบุชื่อแพทย์เฉพาะทาง');
+    if ($('#f_doctype') && $('#f_doctype').value === 'specific' && !d.doctor) throw new Error('กรุณาระบุชื่อแพทย์เฉพาะทาง');
     const val = Number(d.discount_value);
     if (!(val > 0)) throw new Error('กรุณาระบุมูลค่าส่วนลด');
     if (d.discount_type === 'PERCENT' && val > 100) throw new Error('ส่วนลดเปอร์เซ็นต์ต้องไม่เกิน 100');
@@ -576,6 +590,7 @@ async function viewForm(id) {
     if (d.max_uses !== '' && (!Number.isInteger(Number(d.max_uses)) || Number(d.max_uses) < 1)) throw new Error('จำนวนครั้งที่ใช้ได้ต้องเป็นจำนวนเต็มตั้งแต่ 1');
     if (d.max_discount_pct !== '' && !(Number(d.max_discount_pct) > 0 && Number(d.max_discount_pct) <= 100)) throw new Error('เพดานส่วนลดสูงสุดต้องอยู่ระหว่าง 0-100%');
   };
+
   const save = submit => guard(async () => {
     const d = collect();
     if (submit) {
@@ -592,6 +607,7 @@ async function viewForm(id) {
       if (location.hash === '#/edit/' + newId) route(); else location.hash = '#/edit/' + newId;
     }
   });
+
   $('#btn-draft').onclick = () => save(false);
   $('#btn-submit').onclick = () => save(true);
 }
