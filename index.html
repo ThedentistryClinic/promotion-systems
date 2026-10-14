@@ -106,6 +106,13 @@ input[type=radio],input[type=checkbox]{width:auto;accent-color:var(--brand)}
 .modal-box{background:#fff;border-radius:14px;padding:20px;width:100%;max-width:560px;max-height:80vh;overflow:auto}
 .draft{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-top:8px;cursor:pointer}
 .draft:hover{background:var(--brand-l)}
+.modal-box.wide{max-width:960px}
+.att-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.att-item{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center}
+.att-item img{width:100%;height:130px;object-fit:cover;border-radius:6px;cursor:zoom-in;display:block}
+.att-ico{height:130px;display:grid;place-items:center;font-size:42px;background:#f9fafb;border-radius:6px}
+.att-ico[data-view]{cursor:pointer}
+.att-name{font-size:12px;word-break:break-all;margin:6px 0}
 @media print{.modal{display:none!important}}
 /* toast */
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:8px;color:#fff;opacity:0;pointer-events:none;transition:.2s;z-index:100}
@@ -323,7 +330,7 @@ async function viewList(kind) {
       <div class="actions">${cfg.newBtn ? '<a class="btn primary" href="#/new">+ สร้างคำขอใหม่</a>' : ''}
       <button class="btn" id="btn-export">⬇ Export Excel</button></div></div>
     <div class="card">
-      <div class="filters"><input id="f-q" placeholder="ค้นหาเลขที่ / ชื่อโปรโมชั่น / วัตถุประสงค์ / ผู้ขอ">
+      <div class="filters"><input id="f-q" placeholder="ค้นหาเลขที่ / วัตถุประสงค์ / ผู้ขอ">
         <select id="f-s"><option value="">ทุกสถานะ</option>
           ${Object.entries(STATUS_LABEL).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div id="tbl" class="tblwrap"></div>
@@ -333,11 +340,11 @@ async function viewList(kind) {
   const draw = () => {
     const q = $('#f-q').value.trim().toLowerCase(), s = $('#f-s').value;
     shown = cfg.rows.filter(r => (!s || r.status === s) &&
-      (!q || [r.doc_no, r.title, r.objective, r.created_by_name].some(x => String(x || '').toLowerCase().includes(q))));
+      (!q || [r.doc_no, r.title, r.created_by_name].some(x => String(x || '').toLowerCase().includes(q))));
     $('#tbl').innerHTML = shown.length ? `<table><thead><tr>
-      <th>เลขที่</th><th>ชื่อโปรโมชั่น</th>${cfg.creator ? '<th>ผู้ขอ</th>' : ''}<th>ช่วงเวลา</th>
+      <th>เลขที่</th><th>วัตถุประสงค์</th>${cfg.creator ? '<th>ผู้ขอ</th>' : ''}<th>ช่วงเวลา</th>
       <th>ส่วนลด</th><th>อนุมัติถึง</th><th>สถานะ</th><th>อัปเดต</th></tr></thead><tbody>
-      ${shown.map(r => `<tr data-id="${r.id}"><td>${esc(r.doc_no)}</td><td><b>${esc(r.title || r.objective)}</b></td>
+      ${shown.map(r => `<tr data-id="${r.id}"><td>${esc(r.doc_no)}</td><td><b>${esc(r.title)}</b></td>
         ${cfg.creator ? `<td>${esc(r.created_by_name)}</td>` : ''}
         <td>${periodText(r)}</td><td>${discText(r)}</td>
         <td>${ROLE_LABEL[r.approve_until]}</td><td>${statusBadge(r)}</td><td>${fmtDT(r.updated_at)}</td></tr>`).join('')}
@@ -360,11 +367,11 @@ function periodText(r) {
 const listText = (arr, all) => (arr && arr.length) ? arr.join(', ') : all;
 const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((n || 0) / 1024)) + ' KB';
 
-function openModal(html) {
+function openModal(html, cls = '') {
   closeModal();
   const m = document.createElement('div');
   m.className = 'modal'; m.id = 'modal';
-  m.innerHTML = `<div class="modal-box">${html}</div>`;
+  m.innerHTML = `<div class="modal-box ${cls}">${html}</div>`;
   m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close]')) closeModal(); });
   document.body.appendChild(m);
   return m;
@@ -400,7 +407,7 @@ document.addEventListener('click', e => {
 /* ================= FORM ================= */
 async function viewForm(id) {
   let r = {approve_until: 'excom', discount_scope: 'ITEM', discount_type: 'PERCENT', treatments: [], branch_list: [],
-    attachments: [], requester_email: me.email, created_by_name: me.full_name, title: ''};
+    attachments: [], requester_email: me.email, created_by_name: me.full_name};
   let lastReject = null;
   if (id) {
     const [{data, error}, {data: ap}] = await Promise.all([
@@ -428,14 +435,13 @@ async function viewForm(id) {
   $('#main').innerHTML = `<div id="form-root">
     <div class="page-head"><div><h2>📝 แบบฟอร์มขออนุมัติส่วนลดโปรโมชัน</h2>
       <p class="mute">คำขอจะเข้าสู่ Workflow ผ่าน Marketing เป็นลำดับแรกโดยอัตโนมัติ
-      ${id ? `<br><b>กำลังแก้ไข ${esc(r.doc_no)}</b> ·${r.status === 'rejected' ? 'ถูก Reject' : 'แบบร่าง'}` : ''}</p></div>
+      ${id ? `<br><b>กำลังแก้ไข ${esc(r.doc_no)}</b> · ${r.status === 'rejected' ? 'ถูก Reject' : 'แบบร่าง'}` : ''}</p></div>
       <button class="btn warn" id="btn-load">📂 โหลดแบบร่างที่ค้างไว้</button></div>
     ${r.status === 'rejected' && lastReject ? `<div class="alert err"><b>ถูก Reject โดย ${ROLE_LABEL[lastReject.step]} (${esc(lastReject.actor_name)})</b><br>${nl(lastReject.comment)}<br><small>แก้ไขแล้วกด "ส่งขออนุมัติ" ใหม่ ระบบจะเริ่มอนุมัติจาก Marketing อีกครั้ง</small></div>` : ''}
 
     <div class="card"><div class="grid">
       <div class="field"><label>อีเมล Microsoft 365 <span class="req">*</span></label><input type="email" id="f_email" value="${esc(r.requester_email)}" placeholder="name@company.com"></div>
       <div class="field"><label>ชื่อ-นามสกุล <span class="req">*</span></label><input id="f_name" value="${esc(r.created_by_name)}" placeholder="ชื่อ-นามสกุล"></div>
-      <div class="field span2"><label>ชื่อโปรโมชั่น <span class="req">*</span></label><input id="f_title" value="${esc(r.title)}" placeholder="ระบุชื่อโปรโมชั่น"></div>
       <div class="field"><label>ประเภทโปรโมชัน <span class="req">*</span></label>
         <select id="f_type">${Object.entries(PROMO_TYPES).map(([k, v]) => `<option value="${k}" ${r.approve_until === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
         <div class="mute" id="flow-prev" style="font-size:12px;margin-top:4px"></div></div>
@@ -446,13 +452,13 @@ async function viewForm(id) {
     </div></div>
 
     <div class="card"><div class="sect">🎯 ขอบเขตการใช้งาน</div><div class="grid">
-      <div class="field"><label>ขอบเขตส่วนลด</label>${radios('scope', Object.entries(SCOPE_LABEL), r.discount_scope || 'ITEM')}</div>
+      <div class="field"><label>ขอบเขตส่วนลด</label>${radios('scope', Object.entries(SCOPE_LABEL), r.discount_scope)}</div>
       <div class="field"><label>จำกัดรายการรักษา (เลือกได้มากกว่า 1)</label><div id="ms_treat"></div></div>
       <div class="field"><label>จำกัดสาขา (เลือกได้มากกว่า 1)</label><div id="ms_branch"></div></div>
     </div></div>
 
     <div class="card"><div class="sect">🧮 มูลค่าส่วนลด</div><div class="grid">
-      <div class="field"><label>ประเภทส่วนลด</label>${radios('dtype', [['PERCENT', 'เปอร์เซ็นต์ (%)'], ['AMOUNT', 'จำนวนเงิน (บาท)']], r.discount_type || 'PERCENT')}</div>
+      <div class="field"><label>ประเภทส่วนลด</label>${radios('dtype', [['PERCENT', 'เปอร์เซ็นต์ (%)'], ['AMOUNT', 'จำนวนเงิน (บาท)']], r.discount_type)}</div>
       <div class="field"><label>มูลค่าส่วนลด <span class="req">*</span></label><input type="number" min="0" step="any" id="f_val" value="${r.discount_value ?? ''}" placeholder="เช่น 20 หรือ 500"></div>
     </div></div>
 
@@ -495,8 +501,8 @@ async function viewForm(id) {
   $('#att-list').addEventListener('click', e => {
     const b = e.target.closest('[data-rm]'); if (!b) return;
     const a = atts.splice(+b.dataset.rm, 1)[0];
-    if (origPaths.has(a.path)) removed.push(a.path);
-    else sb.storage.from(BUCKET).remove([a.path]).catch(() => {});
+    if (origPaths.has(a.path)) removed.push(a.path);          // ไฟล์ที่บันทึกไว้แล้ว: ลบจริงหลังกดบันทึก
+    else sb.storage.from(BUCKET).remove([a.path]).catch(() => {}); // ไฟล์ที่เพิ่งอัปโหลด: ลบทันที
     markDirty(); drawAtt();
   });
   $('#f_file').addEventListener('change', e => {
@@ -506,7 +512,7 @@ async function viewForm(id) {
         for (const f of files) {
           if (f.size > MAX_FILE) throw new Error(`ไฟล์ ${f.name} ใหญ่เกิน 10 MB`);
           const ext = (f.name.match(/\.[A-Za-z0-9]{1,8}$/) || [''])[0].toLowerCase();
-          const path = `${me.id}/${crypto.randomUUID()}${ext}`;
+          const path = `${me.id}/${crypto.randomUUID()}${ext}`;      // ใช้ชื่อสุ่ม กันปัญหาตัวอักษรไทยใน key
           const {error} = await sb.storage.from(BUCKET).upload(path, f, {contentType: f.type || 'application/octet-stream'});
           if (error) throw error;
           atts.push({name: f.name, path, size: f.size, type: f.type});
@@ -523,8 +529,8 @@ async function viewForm(id) {
     if (error) throw error;
     const map = Object.fromEntries(data.map(d => [d.id, d]));
     const m = openModal(`<h3>📂 แบบร่างที่ค้างไว้</h3>
-      ${data.length ? data.map(d => `<div class="draft" data-id="${d.id}"><div><b>${esc(d.title || 'ไม่มีชื่อโปรโมชั่น')}</b><br>
-        <small class="mute">${esc(d.doc_no)} · แก้ไขล่าสุด ${fmtDT(d.updated_at)} ·${d.status === 'rejected' ? 'ถูก Reject (รอแก้ไข)' : 'แบบร่าง'}</small></div>
+      ${data.length ? data.map(d => `<div class="draft" data-id="${d.id}"><div><b>${esc(d.title)}</b><br>
+        <small class="mute">${esc(d.doc_no)} · แก้ไขล่าสุด ${fmtDT(d.updated_at)} · ${d.status === 'rejected' ? 'ถูก Reject (รอแก้ไข)' : 'แบบร่าง'}</small></div>
         ${d.status === 'draft' ? `<button class="icon" data-del="${d.id}" title="ลบแบบร่าง">🗑</button>` : ''}</div>`).join('')
         : '<div class="empty">ไม่มีแบบร่างที่ค้างไว้</div>'}
       <div class="actions" style="margin-top:14px;justify-content:flex-end"><button class="btn" data-close>ปิด</button></div>`);
@@ -553,36 +559,21 @@ async function viewForm(id) {
   });
 
   /* ---- เก็บค่า / ตรวจสอบ / บันทึก ---- */
-  const v = fid => { const el = $('#' + fid); return el ? el.value.trim() : ''; };
-  const rv = name => { const el = document.querySelector(`input[name="${name}"]:checked`); return el ? el.value : ''; };
-  
+  const v = fid => $('#' + fid).value.trim();
+  const rv = name => document.querySelector(`input[name="${name}"]:checked`).value;
   const collect = () => ({
-    requester_email: v('f_email'),
-    requester_name: v('f_name'),
-    title: v('f_title'),
-    approve_until: $('#f_type') ? $('#f_type').value : 'excom',
-    objective: v('f_obj'),
-    discount_scope: rv('scope') || 'ITEM',
-    treatments: msT.get(),
-    branch_list: msB.get(),
-    discount_type: rv('dtype') || 'PERCENT',
-    discount_value: v('f_val'),
-    promo_code: v('f_code'),
-    start_date: v('f_start'),
-    end_date: v('f_end'),
-    doctor: ($('#f_doctype') && $('#f_doctype').value === 'specific') ? v('f_doctor') : '',
-    patient_group: v('f_pgroup'),
-    max_uses: v('f_uses'),
-    max_discount_pct: v('f_maxpct'),
+    requester_email: v('f_email'), requester_name: v('f_name'), approve_until: $('#f_type').value, objective: v('f_obj'),
+    discount_scope: rv('scope'), treatments: msT.get(), branch_list: msB.get(),
+    discount_type: rv('dtype'), discount_value: v('f_val'),
+    promo_code: v('f_code'), start_date: v('f_start'), end_date: v('f_end'),
+    doctor: $('#f_doctype').value === 'specific' ? v('f_doctor') : '', patient_group: v('f_pgroup'), max_uses: v('f_uses'), max_discount_pct: v('f_maxpct'),
     attachments: atts,
   });
-
   const validate = d => {
     if (!/^\S+@\S+\.\S+$/.test(d.requester_email)) throw new Error('กรุณาระบุอีเมล Microsoft 365 ให้ถูกต้อง');
     if (!d.requester_name) throw new Error('กรุณาระบุชื่อ-นามสกุล');
-    if (!d.title) throw new Error('กรุณาระบุชื่อโปรโมชั่น');
     if (!d.objective) throw new Error('กรุณาระบุวัตถุประสงค์ในการทำโปรโมชัน');
-    if ($('#f_doctype') && $('#f_doctype').value === 'specific' && !d.doctor) throw new Error('กรุณาระบุชื่อแพทย์เฉพาะทาง');
+    if ($('#f_doctype').value === 'specific' && !d.doctor) throw new Error('กรุณาระบุชื่อแพทย์เฉพาะทาง');
     const val = Number(d.discount_value);
     if (!(val > 0)) throw new Error('กรุณาระบุมูลค่าส่วนลด');
     if (d.discount_type === 'PERCENT' && val > 100) throw new Error('ส่วนลดเปอร์เซ็นต์ต้องไม่เกิน 100');
@@ -590,7 +581,6 @@ async function viewForm(id) {
     if (d.max_uses !== '' && (!Number.isInteger(Number(d.max_uses)) || Number(d.max_uses) < 1)) throw new Error('จำนวนครั้งที่ใช้ได้ต้องเป็นจำนวนเต็มตั้งแต่ 1');
     if (d.max_discount_pct !== '' && !(Number(d.max_discount_pct) > 0 && Number(d.max_discount_pct) <= 100)) throw new Error('เพดานส่วนลดสูงสุดต้องอยู่ระหว่าง 0-100%');
   };
-
   const save = submit => guard(async () => {
     const d = collect();
     if (submit) {
@@ -607,7 +597,6 @@ async function viewForm(id) {
       if (location.hash === '#/edit/' + newId) route(); else location.hash = '#/edit/' + newId;
     }
   });
-
   $('#btn-draft').onclick = () => save(false);
   $('#btn-submit').onclick = () => save(true);
 }
@@ -620,7 +609,6 @@ function detailRows(r, forPrint) {
     : '-';
   return [
     ['ผู้ขอ', `${esc(r.created_by_name)}${r.requester_email ? ' (' + esc(r.requester_email) + ')' : ''}`],
-    ['ชื่อโปรโมชั่น', esc(r.title || '-')],
     ['ประเภทโปรโมชัน', esc(PROMO_TYPES[r.approve_until] || ROLE_LABEL[r.approve_until])],
     ['วัตถุประสงค์', nl(r.objective) || '-'],
     ['ขอบเขตส่วนลด', esc(SCOPE_LABEL[r.discount_scope] || '-')],
@@ -645,6 +633,7 @@ async function viewDetail(id) {
   if (error || !r) throw new Error('ไม่พบคำขอ หรือคุณไม่มีสิทธิ์ดู');
   const hist = ap || [];
 
+  // ประวัติรอบล่าสุด (นับจาก submit/resubmit ครั้งล่าสุด)
   let startIdx = -1;
   hist.forEach((a, i) => { if (a.action === 'submit' || a.action === 'resubmit') startIdx = i; });
   const cycle = startIdx >= 0 ? hist.slice(startIdx) : [];
@@ -665,8 +654,28 @@ async function viewDetail(id) {
   const canEdit = isOwner && ['draft', 'rejected'].includes(r.status);
   const canDelete = me.role === 'admin' || (isOwner && r.status === 'draft');
 
+  // ไฟล์แนบ: ขอ signed URL (อายุ 1 ชม.) เพื่อพรีวิวรูป/PDF ในหน้า
+  const attList = r.attachments || [];
+  let attView = [];
+  if (attList.length) {
+    const {data: urls} = await sb.storage.from(BUCKET).createSignedUrls(attList.map(a => a.path), 3600);
+    const byPath = Object.fromEntries((urls || []).map(x => [x.path, x]));
+    attView = attList.map(a => {
+      const u = byPath[a.path] && !byPath[a.path].error ? byPath[a.path].signedUrl : null;
+      const isImg = /^image\//.test(a.type || '') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name || '');
+      const isPdf = a.type === 'application/pdf' || /\.pdf$/i.test(a.name || '');
+      return {...a, url: u, kind: isImg ? 'img' : isPdf ? 'pdf' : 'file'};
+    });
+  }
+  const attHtml = attView.length ? `<div class="card"><h3>📎 เอกสารแนบ (${attView.length})</h3><div class="att-grid">${attView.map((a, i) => !a.url
+    ? `<div class="att-item"><div class="att-ico">⚠️</div><div class="att-name">${esc(a.name)}<br><small class="mute">เปิดไฟล์ไม่ได้</small></div></div>`
+    : `<div class="att-item">${a.kind === 'img' ? `<img src="${esc(a.url)}" data-view="${i}" alt="${esc(a.name)}" loading="lazy">`
+        : a.kind === 'pdf' ? `<div class="att-ico" data-view="${i}">📄</div>` : '<div class="att-ico">📎</div>'}
+      <div class="att-name">${esc(a.name)}<br><small class="mute">${fmtSize(a.size)}</small></div>
+      <div>${a.kind !== 'file' ? `<button class="btn sm" data-view="${i}">ดู</button> ` : ''}<a class="btn sm" href="${esc(a.url)}" target="_blank" rel="noopener">เปิด / ดาวน์โหลด</a></div></div>`).join('')}</div></div>` : '';
+
   $('#main').innerHTML = `
-    <div class="page-head"><div><a href="${DEFAULT[group()]}">← กลับ</a><h2 style="margin-top:6px">${esc(r.title || r.objective)}</h2>
+    <div class="page-head"><div><a href="${DEFAULT[group()]}">← กลับ</a><h2 style="margin-top:6px">${esc(r.title)}</h2>
       <p class="mute">${esc(r.doc_no)} · ${statusBadge(r)}</p></div>
       <div class="actions">
         ${canEdit ? `<a class="btn primary" href="#/edit/${r.id}">✏️ ${r.status === 'rejected' ? 'แก้ไขและส่งใหม่' : 'แก้ไข'}</a>` : ''}
@@ -679,20 +688,22 @@ async function viewDetail(id) {
       <div class="field"><label>ความคิดเห็น (จำเป็นเมื่อ Reject)</label><textarea id="cmt"></textarea></div>
       <div class="actions"><button class="btn ok" id="btn-ap">✓ อนุมัติ</button><button class="btn danger" id="btn-rj">✕ Reject (ส่งกลับแก้ไข)</button></div></div>` : ''}
     <div class="card"><h3>รายละเอียดคำขอ</h3><dl class="kv">
-      ${detailRows(r).map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('')}</dl></div>
+      ${detailRows(r).filter(([k]) => k !== 'เอกสารแนบ').map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('')}</dl></div>
+    ${attHtml}
     <div class="card"><h3>ประวัติการดำเนินการ</h3>${hist.length ? `<div class="tblwrap"><table><thead><tr><th>เวลา</th><th>ขั้นตอน</th><th>การดำเนินการ</th><th>โดย</th><th>ความคิดเห็น</th></tr></thead><tbody>
       ${hist.map(a => `<tr><td>${fmtDT(a.created_at)}</td><td>${a.step === 'requester' ? 'ผู้ขอ' : ROLE_LABEL[a.step]}</td>
         <td><span class="badge ${a.action === 'reject' ? 'rejected' : a.action === 'approve' ? 'approved' : 'draft'}">${ACTION_LABEL[a.action]}</span></td>
         <td>${esc(a.actor_name)}</td><td>${nl(a.comment) || '-'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="mute">ยังไม่มีประวัติ</div>'}</div>`;
 
-  $$('a[data-path]').forEach(a => a.onclick = e => {
-    e.preventDefault();
-    const w = window.open('about:blank', '_blank');
-    guard(async () => {
-      const {data, error: er} = await sb.storage.from(BUCKET).createSignedUrl(a.dataset.path, 300);
-      if (er) { if (w) w.close(); throw er; }
-      if (w) w.location.href = data.signedUrl; else location.href = data.signedUrl;
-    });
+  // พรีวิวไฟล์แนบ (รูป / PDF) ใน popup
+  $$('[data-view]').forEach(el => el.onclick = () => {
+    const a = attView[+el.dataset.view];
+    const body = a.kind === 'img'
+      ? `<img src="${esc(a.url)}" alt="${esc(a.name)}" style="max-width:100%;display:block;margin:0 auto">`
+      : `<iframe src="${esc(a.url)}" style="width:100%;height:75vh;border:0"></iframe>`;
+    openModal(`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+      <b style="word-break:break-all">${esc(a.name)}</b>
+      <span style="white-space:nowrap"><a class="btn sm" href="${esc(a.url)}" target="_blank" rel="noopener">เปิดในแท็บใหม่</a> <button class="btn sm" data-close>ปิด</button></span></div>${body}`, 'wide');
   });
   if ($('#btn-print')) $('#btn-print').onclick = () => printDoc(r, cycle);
   if ($('#btn-del')) $('#btn-del').onclick = () => guard(async () => {
@@ -741,7 +752,7 @@ async function exportExcel(rows, filename) {
   const byId = Object.fromEntries(rows.map(r => [r.id, r]));
 
   const s1 = rows.map(r => ({
-    'เลขที่': r.doc_no, 'ผู้ขอ': r.created_by_name, 'อีเมล': r.requester_email, 'ชื่อโปรโมชั่น': r.title,
+    'เลขที่': r.doc_no, 'ผู้ขอ': r.created_by_name, 'อีเมล': r.requester_email,
     'ประเภทโปรโมชัน': PROMO_TYPES[r.approve_until] || ROLE_LABEL[r.approve_until],
     'วัตถุประสงค์': r.objective, 'ขอบเขตส่วนลด': SCOPE_LABEL[r.discount_scope],
     'จำกัดรายการรักษา': listText(r.treatments, 'ทุกรายการรักษา'), 'จำกัดสาขา': listText(r.branch_list, 'ทุกสาขา'),
@@ -755,7 +766,7 @@ async function exportExcel(rows, filename) {
     'วันที่สร้าง': fmtDT(r.created_at), 'วันที่ส่งอนุมัติ': fmtDT(r.submitted_at), 'วันที่อนุมัติครบ': fmtDT(r.completed_at),
   }));
   const s2 = ap.filter(a => byId[a.request_id]).map(a => ({
-    'เลขที่': byId[a.request_id].doc_no, 'ชื่อโปรโมชั่น': byId[a.request_id].title,
+    'เลขที่': byId[a.request_id].doc_no, 'วัตถุประสงค์': byId[a.request_id].title,
     'เวลา': fmtDT(a.created_at), 'ขั้นตอน': a.step === 'requester' ? 'ผู้ขอ' : ROLE_LABEL[a.step],
     'การดำเนินการ': ACTION_LABEL[a.action], 'โดย': a.actor_name, 'ความคิดเห็น': a.comment,
   }));
@@ -800,7 +811,7 @@ async function viewDashboard() {
   const stuck = rows.filter(r => r.status === 'pending')
     .sort((a, b) => new Date(a.updated_at) - new Date(b.updated_at)).slice(0, 5);
   const recent = rows.slice(0, 8);
-  const tr = r => `<tr data-id="${r.id}"><td>${esc(r.doc_no)}</td><td>${esc(r.title || r.objective)}</td><td>${esc(r.created_by_name)}</td><td>${statusBadge(r)}</td></tr>`;
+  const tr = r => `<tr data-id="${r.id}"><td>${esc(r.doc_no)}</td><td>${esc(r.title)}</td><td>${esc(r.created_by_name)}</td><td>${statusBadge(r)}</td></tr>`;
 
   $('#main').innerHTML = `
     <div class="page-head"><div><h2>Dashboard</h2><p class="mute">ภาพรวมคำขอโปรโมชั่นทั้งหมด</p></div>
@@ -819,7 +830,7 @@ async function viewDashboard() {
       <div class="card"><h3>คำขอที่สร้าง 6 เดือนล่าสุด</h3>${bars(months)}</div>
     </div>
     <div class="two">
-      <div class="card"><h3>ค้างนานที่สุด</h3>${stuck.length ? `<table><tbody>${stuck.map(r => `<tr data-id="${r.id}"><td>${esc(r.doc_no)}</td><td>${esc(r.title || r.objective)}</td>
+      <div class="card"><h3>ค้างนานที่สุด</h3>${stuck.length ? `<table><tbody>${stuck.map(r => `<tr data-id="${r.id}"><td>${esc(r.doc_no)}</td><td>${esc(r.title)}</td>
         <td>รอ ${ROLE_LABEL[r.current_step]}</td><td class="r">${Math.floor((Date.now() - new Date(r.updated_at)) / 864e5)} วัน</td></tr>`).join('')}</tbody></table>` : '<div class="mute">ไม่มีรายการค้าง 🎉</div>'}</div>
       <div class="card"><h3>คำขอล่าสุด</h3>${recent.length ? `<table><tbody>${recent.map(tr).join('')}</tbody></table>` : '<div class="mute">ยังไม่มีคำขอ</div>'}</div>
     </div>`;
@@ -828,6 +839,16 @@ async function viewDashboard() {
 }
 
 /* ================= USERS (admin) ================= */
+async function callAdmin(body) {
+  const {data, error} = await sb.functions.invoke('admin-users', {body});
+  if (error) {
+    let msg = error.message;
+    try { const j = await error.context.json(); msg = j.error || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
 const randomPw = () => { const c = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = '';
   const a = crypto.getRandomValues(new Uint32Array(12)); a.forEach(n => s += c[n % c.length]); return s; };
 
@@ -858,28 +879,9 @@ async function viewUsers() {
 
   $('#u_gen').onclick = () => { $('#u_pw').value = randomPw(); };
   $('#uf').addEventListener('submit', e => { e.preventDefault(); guard(async () => {
-    const email = $('#u_email').value.trim();
-    const password = $('#u_pw').value;
-    const full_name = $('#u_name').value.trim();
-    const role = $('#u_role').value;
-
-    const { data: authData, error: authErr } = await sb.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name } }
-    });
-    if (authErr) throw authErr;
-
-    if (authData.user) {
-      const { error: profileErr } = await sb.from('profiles').update({
-        full_name,
-        role,
-        active: true
-      }).eq('id', authData.user.id);
-      if (profileErr) throw profileErr;
-    }
-
-    toast(`สร้างผู้ใช้สำเร็จ (รหัสผ่าน: ${password})`);
+    await callAdmin({action: 'create', email: $('#u_email').value, password: $('#u_pw').value,
+      full_name: $('#u_name').value, role: $('#u_role').value});
+    toast(`สร้างผู้ใช้แล้ว (รหัสผ่านเริ่มต้น: ${$('#u_pw').value})`);
     await viewUsers();
   }); });
   $('#ubody').addEventListener('click', e => {
@@ -888,20 +890,17 @@ async function viewUsers() {
     guard(async () => {
       if (b.dataset.a === 'save') {
         const {error: er} = await sb.from('profiles').update({
-          full_name: $('.n', tr).value.trim(), role: $('.ro', tr).value, active:$('.ac', tr).checked}).eq('id', id);
+          full_name: $('.n', tr).value.trim(), role: $('.ro', tr).value, active: $('.ac', tr).checked}).eq('id', id);
         if (er) throw er;
         toast('บันทึกแล้ว');
       } else if (b.dataset.a === 'pw') {
         const pw = prompt('รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)', randomPw());
         if (!pw) return;
-        if (pw.length < 8) throw new Error('รหัสผ่านต้องอย่างน้อย 8 ตัวอักษร');
-        const {error: er} = await sb.auth.updateUser({password: pw});
-        if (er) throw er;
-        toast('เปลี่ยนรหัสผ่านสำเร็จ');
+        await callAdmin({action: 'reset_password', id, password: pw});
+        toast('รีเซ็ตรหัสผ่านแล้ว: ' + pw);
       } else if (b.dataset.a === 'del') {
-        if (!confirm('ลบข้อมูลโปรไฟล์ผู้ใช้นี้ออกจากระบบ?')) return;
-        const {error: er} = await sb.from('profiles').delete().eq('id', id);
-        if (er) throw er;
+        if (!confirm('ลบผู้ใช้นี้ถาวร? (คำขอที่เคยสร้างจะยังอยู่)')) return;
+        await callAdmin({action: 'delete', id});
         toast('ลบผู้ใช้แล้ว');
         await viewUsers();
       }
