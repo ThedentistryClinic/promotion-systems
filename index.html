@@ -706,7 +706,7 @@ async function viewDetail(id) {
   const canEdit = isOwner && ['draft', 'rejected'].includes(r.status);
   const canDelete = me.role === 'admin' || (isOwner && r.status === 'draft');
 
-  // ไฟล์แนบ: ขอ signed URL (อายุ 1 ชม.) เพื่อพรีวิวรูป/PDF ในหน้า
+  // ไฟล์แนบ: ขอ signed URL (อายุ 1 ชม.) เพื่อพรีวิวรูป/PDF ในหน้า (ผู้อนุมัติสามารถดูได้เช่นกัน)
   const attList = r.attachments || [];
   let attView = [];
   if (attList.length) {
@@ -747,7 +747,7 @@ async function viewDetail(id) {
         <td><span class="badge ${a.action === 'reject' ? 'rejected' : a.action === 'approve' ? 'approved' : 'draft'}">${ACTION_LABEL[a.action]}</span></td>
         <td>${esc(a.actor_name)}</td><td>${nl(a.comment) || '-'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="mute">ยังไม่มีประวัติ</div>'}</div>`;
 
-  // พรีวิวไฟล์แนบ (รูป / PDF) ใน popup
+  // พรีวิวไฟล์แนบ (รูป / PDF) ใน popup สำหรับผู้อนุมัติและผู้เกี่ยวข้อง
   $$('[data-view]').forEach(el => el.onclick = () => {
     const a = attView[+el.dataset.view];
     const body = a.kind === 'img'
@@ -951,7 +951,7 @@ async function viewUsers() {
     guard(async () => {
       if (b.dataset.a === 'save') {
         const {error: er} = await sb.from('profiles').update({
-          full_name: $('.n', tr).value.trim(), role: $('.ro', tr).value, active:$('.ac', tr).checked}).eq('id', id);
+          full_name: $('.n', tr).value.trim(), role: $('.ro', tr).value, active:$('.ac', tr].checked}).eq('id', id);
         if (er) throw er;
         toast('บันทึกแล้ว');
       } else if (b.dataset.a === 'pw') {
